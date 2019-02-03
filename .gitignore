@@ -8,7 +8,6 @@ data/*
 venv/*
 .idea/*
 *.xml
-
 # C extensions
 *.so
 
