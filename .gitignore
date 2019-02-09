@@ -5,6 +5,7 @@ __pycache__/
 
 # local
 data/*
+raw_dataset/*
 venv/*
 .idea/*
 *.xml
