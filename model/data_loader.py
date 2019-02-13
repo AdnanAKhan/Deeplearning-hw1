@@ -1,21 +1,25 @@
-import random
 import os
-
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
+import pandas as pd
+import numpy as np
+
+NET = 'resnet16'
+SIZE = {
+    'resnet16': 224,
+}
 
 train_transformer = transforms.Compose([
-    transforms.Resize(64),  # resize the image to 64x64 (remove if images are already 64x64)
-    transforms.RandomHorizontalFlip(),  # randomly flip image horizontally
+    transforms.Resize(size=(SIZE[NET], SIZE[NET])),  # resize the image to appropriate shape
     transforms.ToTensor()])  # transform it into a torch tensor
 
 eval_transformer = transforms.Compose([
-    transforms.Resize(64),  # resize the image to 64x64 (remove if images are already 64x64)
+    transforms.Resize(size=(SIZE[NET], SIZE[NET])),  # resize the image to 64x64 (remove if images are already 64x64)
     transforms.ToTensor()])  # transform it into a torch tensor
 
 
-class SIGNSDataset(Dataset):
+class LocalizationDataset(Dataset):
     """
     A standard PyTorch definition of Dataset which defines the functions __len__ and __getitem__.
     """
@@ -27,10 +31,21 @@ class SIGNSDataset(Dataset):
             data_dir: (string) directory containing the dataset
             transform: (torchvision.transforms) transformation to apply on image
         """
-        self.filenames = os.listdir(data_dir)
-        self.filenames = [os.path.join(data_dir, f) for f in self.filenames if f.endswith('.jpg')]
 
-        self.labels = [int(os.path.split(filename)[-1][0]) for filename in self.filenames]
+        self.raw_image_dir = os.path.join(os.path.abspath(os.path.join(os.getcwd())),
+                                          'raw_dataset', 'Localization dataset', 'images')
+
+        self.dataset_df = pd.read_csv(os.path.join(data_dir, 'dataset.csv'), header=0)
+
+        self.filenames = [row['filename'] for ind, row in self.dataset_df.iterrows()]
+
+        self.labels = []
+        self.original_shapes = []
+
+        for ind, row in self.dataset_df.iterrows():
+            self.labels.append(np.array([row['x'], row['y'], row['w'], row['h']], dtype=np.float))
+            self.original_shapes.append(np.array([row['original_h'], row['original_w']], dtype=np.float))
+
         self.transform = transform
 
     def __len__(self):
@@ -46,9 +61,9 @@ class SIGNSDataset(Dataset):
             image: (Tensor) transformed image
             label: (int) corresponding label of image
         """
-        image = Image.open(self.filenames[idx])  # PIL image
+        image = Image.open(os.path.join(self.raw_image_dir, self.filenames[idx]))  # PIL image
         image = self.transform(image)
-        return image, self.labels[idx]
+        return image, self.labels[idx], self.original_shapes[idx]
 
 
 def fetch_dataloader(types, data_dir, params):
@@ -65,22 +80,26 @@ def fetch_dataloader(types, data_dir, params):
 
     for split in ['train', 'val', 'test']:
         if split in types:
-            path = os.path.join(data_dir, "{}".format(split))
+            dataset_csv_path = os.path.join(data_dir, "{}".format(split))
 
             # use the train_transformer if training data, else use eval_transformer without random flip
             if split == 'train':
-                dl = DataLoader(SIGNSDataset(path, train_transformer),
+                dl = DataLoader(LocalizationDataset(dataset_csv_path, train_transformer),
                                 batch_size=params.batch_size,
                                 shuffle=True,
                                 num_workers=params.num_workers,
                                 pin_memory=params.cuda)
-            else:
-                dl = DataLoader(SIGNSDataset(path, eval_transformer),
+            elif split == 'val':
+                dl = DataLoader(LocalizationDataset(dataset_csv_path, eval_transformer),
                                 batch_size=params.batch_size,
                                 shuffle=False,
                                 num_workers=params.num_workers,
                                 pin_memory=params.cuda)
+            else:
+                # not handling the test.
+                dl = None
 
-            dataloaders[split] = dl
+            if dl:
+                dataloaders[split] = dl
 
     return dataloaders

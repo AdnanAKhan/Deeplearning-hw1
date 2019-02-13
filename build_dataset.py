@@ -12,22 +12,28 @@ makes training faster.
 We already have a test set created, so we only need to split "train" into train and val sets.
 Because we don't have a lot of images and we want that the statistics on the val set be as
 representative as possible, we'll take 20% of "train" as val set.
+
+
+
 """
 
 import argparse
-import random
 import os
-
 from PIL import Image
 from tqdm import tqdm
+import pandas as pd
+import numpy as np
 
-SIZE = 64
+SIZE = 224  # Resnet16
 TRAIN_SPLIT = 0.8
 VALIDATION_SPLIT = 0.2
+SEED = 230
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_dir', default='raw_dataset/SIGNS dataset', help="Directory with the SIGNS dataset")
-parser.add_argument('--output_dir', default='data/64x64_SIGNS', help="Where to write the new data")
+parser.add_argument('--data_dir',
+                    default='raw_dataset/Localization dataset',
+                    help="Directory with the Images and training and test csvs")
+parser.add_argument('--output_dir', default='data/LocalizationDataset', help="Where to write the new data")
 
 
 def resize_and_save(filename, output_dir, size=SIZE):
@@ -43,31 +49,57 @@ if __name__ == '__main__':
 
     assert os.path.isdir(args.data_dir), "Couldn't find the dataset at {}".format(args.data_dir)
 
-    # Define the data directories
-    train_data_dir = os.path.join(args.data_dir, 'train')
-    test_data_dir = os.path.join(args.data_dir, 'test')
+    # Define the train and test dataset  directories
+    train_images_txt = os.path.join(args.data_dir, 'train_images.txt')
+    train_boxes_txt = os.path.join(args.data_dir, 'train_boxes.txt')
+    test_images_txt = os.path.join(args.data_dir, 'test_images.txt')
 
     # Get the filenames in each directory (train and test)
     # filtering the images based on the file type. In this case, this code only except files with .jpg extension.
-    filenames = os.listdir(train_data_dir)
-    filenames = [os.path.join(train_data_dir, f) for f in filenames if f.endswith('.jpg')]
+    number_training_images = 0
+    with open(train_images_txt, 'r') as f:
+        number_training_images = len(f.readlines())
 
-    test_filenames = os.listdir(test_data_dir)
-    test_filenames = [os.path.join(test_data_dir, f) for f in test_filenames if f.endswith('.jpg')]
+    number_training_boxes = []
+    with open(train_boxes_txt, 'r') as f:
+        number_training_boxes = len(f.readlines())
+
+    assert number_training_boxes == number_training_images, \
+        'Number of training {}  and label (Boxes) {} are not same'.format(number_training_images,
+                                                                          number_training_boxes)
+    # load everything in pandas data frame for manipulation
+    df_boxes = pd.read_csv(train_boxes_txt, sep=' ', header=None)
+    df_names = pd.read_csv(train_images_txt, header=None)
+    train_df = pd.concat([df_names, df_boxes], axis=1, ignore_index=True)
+    train_df.columns = ['filename', 'x', 'y', 'w', 'h']
+
+    # store the original size of the image
+    train_df['original_h'] = 0.0
+    train_df['original_w'] = 0.0
+
+    for index, row in train_df.iterrows():
+        image_path = os.path.join(args.data_dir, 'images', row['filename'])
+        image = Image.open(image_path)
+        width, height = image.size
+        train_df.loc[index, 'original_h'] = height
+        train_df.loc[index, 'original_w'] = width
+
+    test_df = pd.read_csv(test_images_txt, header=None)
+    test_df.columns = ['filename']
 
     # Split the images in 'train' into 80% train and 20% val
     # Make sure to always shuffle with a fixed seed so that the split is reproducible
-    random.seed(230)
-    filenames.sort()
-    random.shuffle(filenames)
+    train_df.sort_values(by=['filename'], inplace=True)
+    train_df.reindex(np.random.RandomState(seed=SEED).permutation(train_df.index))
 
-    split = int(TRAIN_SPLIT * len(filenames))
-    train_filenames = filenames[:split]
-    val_filenames = filenames[split:]
+    split = int(TRAIN_SPLIT * len(train_df))
 
-    filenames = {'train': train_filenames,
-                 'val': val_filenames,
-                 'test': test_filenames}
+    train_filenames_with_label_df = train_df[:split]
+    val_filenames_with_label_df = train_df[split:]
+
+    dataset_df = {'train': train_filenames_with_label_df,
+                  'val': val_filenames_with_label_df,
+                  'test': test_df}
 
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
@@ -82,8 +114,14 @@ if __name__ == '__main__':
         else:
             print("Warning: dir {} already exists".format(output_dir_split))
 
-        print("Processing {} data, saving preprocessed data to {}".format(split, output_dir_split))
-        for filename in tqdm(filenames[split]):
-            resize_and_save(filename, output_dir_split, size=SIZE)
+        print("Processing {} data, saving preprocessed csv file to {}".format(split, output_dir_split))
+
+        #
+        df = dataset_df[split]
+        df.to_csv(path_or_buf=os.path.join(output_dir_split, '{}.csv'.format('dataset')), index=False)
+
+        # Not pre-processing the file re shaping
+        # for filename in tqdm(filenames[split]):
+        #     resize_and_save(filename, output_dir_split, size=SIZE)
 
     print("Done building dataset")

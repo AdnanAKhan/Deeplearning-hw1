@@ -10,6 +10,7 @@ from torch.autograd import Variable
 import utils
 import model.net as net
 import model.data_loader as data_loader
+from utils.localization_utils import box_transform
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data_dir', default='data/64x64_SIGNS', help="Directory containing the dataset")
@@ -36,25 +37,31 @@ def evaluate(model, loss_fn, dataloader, metrics, params):
     summ = []
 
     # compute metrics over the dataset
-    for data_batch, labels_batch in dataloader:
+    for data_batch, labels_batch, original_shapes_batch in dataloader:
+
+        # Transform the boxes
+        labels_batch = box_transform(labels_batch, original_shapes_batch)
 
         # move to GPU if available
         if params.cuda:
             data_batch, labels_batch = data_batch.cuda(async=True), labels_batch.cuda(async=True)
+            original_shapes_batch = original_shapes_batch.cuda(async=True)
 
         # fetch the next evaluation batch
         data_batch, labels_batch = Variable(data_batch), Variable(labels_batch)
+        original_shapes_batch = Variable(original_shapes_batch)
 
         # compute model output
         output_batch = model(data_batch)
         loss = loss_fn(output_batch, labels_batch)
 
         # extract data from torch Variable, move to cpu, convert to numpy arrays
-        output_batch = output_batch.data.cpu().numpy()
-        labels_batch = labels_batch.data.cpu().numpy()
+        # output_batch = output_batch.data.cpu().numpy()
+        # labels_batch = labels_batch.data.cpu().numpy()
+        # original_shapes_batch = original_shapes_batch.data.cpu().numpy()
 
         # compute all metrics on this batch
-        summary_batch = {metric: metrics[metric](output_batch, labels_batch) for metric in metrics}
+        summary_batch = {metric: metrics[metric](output_batch, labels_batch, original_shapes_batch) for metric in metrics}
         summary_batch['loss'] = loss.item()
         summ.append(summary_batch)
 

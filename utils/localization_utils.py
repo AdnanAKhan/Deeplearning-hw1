@@ -10,7 +10,7 @@ def to_2d_tensor(inp):
             o= torch.unsqueeze(x, 0)
             print(o.size()) # torch.Size([1, 6])
     """
-    inp = torch.Tensor(inp)
+    inp = torch.Tensor(inp.float())
     if len(inp.size()) < 2:  # if one D vector
         inp = inp.unsqueeze(0)
     return inp
@@ -108,7 +108,7 @@ def compute_IoU(boxes1, boxes2):
     return ia / (a1 + a2 - ia)
 
 
-def compute_acc(preds, targets, im_sizes, theta=0.4):
+def compute_acc(preds, targets, im_sizes):
     """
     Computes accuracy between predictions and targets
     :param preds:

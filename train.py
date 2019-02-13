@@ -9,14 +9,14 @@ import torch
 import torch.optim as optim
 from torch.autograd import Variable
 from tqdm import tqdm
-
-import utils
-import model.net as net
 import model.data_loader as data_loader
 from evaluate import evaluate
+from model.net import ModelWrapper, metrics, loss_fn
+import utils.utils as utils
+from utils.localization_utils import box_transform
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_dir', default='data/64x64_SIGNS', help="Directory containing the dataset")
+parser.add_argument('--data_dir', default='data/LocalizationDataset', help="Directory containing the dataset")
 parser.add_argument('--model_dir', default='experiments/base_model', help="Directory containing params.json")
 parser.add_argument('--restore_file', default=None,
                     help="Optional, name of the file in --model_dir containing weights to reload before \
@@ -45,17 +45,23 @@ def train(model, optimizer, loss_fn, dataloader, metrics, params):
 
     # Use tqdm for progress bar
     with tqdm(total=len(dataloader)) as t:
-        for i, (train_batch, labels_batch) in enumerate(dataloader):
+        for i, (train_batch, labels_batch, original_shapes_batch) in enumerate(dataloader):
+
+            # Transform the boxes
+            labels_batch = box_transform(labels_batch, original_shapes_batch)
 
             # move to GPU if available
             if params.cuda:
                 train_batch, labels_batch = train_batch.cuda(async=True), labels_batch.cuda(async=True)
+                original_shapes_batch = original_shapes_batch.cuda(async=True)
 
             # convert to torch Variables
             train_batch, labels_batch = Variable(train_batch), Variable(labels_batch)
+            original_shapes_batch = Variable(original_shapes_batch)
 
             # compute model output and loss
             output_batch = model(train_batch)
+
             loss = loss_fn(output_batch, labels_batch)
 
             # clear previous gradients, compute gradients of all variables wrt loss
@@ -68,11 +74,11 @@ def train(model, optimizer, loss_fn, dataloader, metrics, params):
             # Evaluate summaries only once in a while
             if i % params.save_summary_steps == 0:
                 # extract data from torch Variable, move to cpu, convert to numpy arrays
-                output_batch = output_batch.data.cpu().numpy()
-                labels_batch = labels_batch.data.cpu().numpy()
+                # output_batch = output_batch.data.cpu().numpy()
+                # labels_batch = labels_batch.data.cpu().numpy()
 
                 # compute all metrics on this batch
-                summary_batch = {metric: metrics[metric](output_batch, labels_batch)
+                summary_batch = {metric: metrics[metric](output_batch, labels_batch, original_shapes_batch)
                                  for metric in metrics}
                 summary_batch['loss'] = loss.item()
                 summ.append(summary_batch)
@@ -83,7 +89,6 @@ def train(model, optimizer, loss_fn, dataloader, metrics, params):
             t.set_postfix(loss='{:05.3f}'.format(loss_avg()))
             t.update()
 
-    # compute mean of all metrics in summary
     metrics_mean = {metric: np.mean([x[metric] for x in summ]) for metric in summ[0]}
     metrics_string = " ; ".join("{}: {:05.3f}".format(k, v) for k, v in metrics_mean.items())
     logging.info("- Train metrics: " + metrics_string)
@@ -159,7 +164,8 @@ if __name__ == '__main__':
 
     # Set the random seed for reproducible experiments
     torch.manual_seed(230)
-    if params.cuda: torch.cuda.manual_seed(230)
+    if params.cuda:
+        torch.cuda.manual_seed(230)
 
     # Set the logger
     utils.set_logger(os.path.join(args.model_dir, 'train.log'))
@@ -172,15 +178,16 @@ if __name__ == '__main__':
     train_dl = dataloaders['train']
     val_dl = dataloaders['val']
 
-    logging.info("- done.")
+    logging.info("dataset loading - done.")
 
     # Define the model and optimizer
-    model = net.Net(params).cuda() if params.cuda else net.Net(params)
+    modelWrapperObj = ModelWrapper()
+    model = modelWrapperObj.get_resnet18_network().cuda() if params.cuda else modelWrapperObj.get_resnet18_network()
     optimizer = optim.Adam(model.parameters(), lr=params.learning_rate)
 
     # fetch loss function and metrics
-    loss_fn = net.loss_fn
-    metrics = net.metrics
+    loss_fn = loss_fn
+    metrics = metrics
 
     # Train the model
     logging.info("Starting training for {} epoch(s)".format(params.num_epochs))
