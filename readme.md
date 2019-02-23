@@ -1,3 +1,7 @@
+Git repo: https://github.com/AdnanAKhan/Deeplearning-hw1
+branch: image-localization-assignment
+
+
 ## Homework 1 for COMP 7950: Deep Learning
 
 ### 
@@ -13,7 +17,7 @@ For this assignment only.
 
 Step 1 : Create virtual env using pip and the available requirement.txt (in case of local setup)
 
-Step 2 : Make sure the 'raw_image_dir' class variable points to appropriate image folder. In case you are running
+Step 2 : Make sure the 'raw_image_dir' class variable (LocalizationDataset class in model/data_loader.py) points to appropriate image folder. In case you are running
 the code in any linux machine use '/import/helium-share/staff/ywang/comp7950/images'.
 
 Step 3 : Create dataset by executing build_dataset.py. this class loads the training dataset into train.txt, val.txt (80:20 split)
