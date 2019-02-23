@@ -8,9 +8,9 @@ import numpy as np
 import torch
 import torch.optim as optim
 from torch.autograd import Variable
-from tqdm import tqdm
+# from tqdm import tqdm
 import model.data_loader as data_loader
-from evaluate import evaluate
+from evaluate_localize import evaluate
 from model.net import ModelWrapper, metrics, loss_fn
 import utils.utils as utils
 from utils.localization_utils import box_transform
@@ -40,56 +40,47 @@ def train(model, optimizer, loss_fn, dataloader, metrics, params):
     model.train()
 
     # summary for current training loop and a running average object for loss
-    summ = []
+    summary = []
     loss_avg = utils.RunningAverage()
 
-    # Use tqdm for progress bar
-    with tqdm(total=len(dataloader)) as t:
-        for i, (train_batch, labels_batch, original_shapes_batch) in enumerate(dataloader):
+    for i, (train_batch, labels_batch, original_shapes_batch) in enumerate(dataloader):
 
-            # Transform the boxes
-            labels_batch = box_transform(labels_batch, original_shapes_batch)
+        # Transform the boxes
+        labels_batch = box_transform(labels_batch, original_shapes_batch)
 
-            # move to GPU if available
-            if params.cuda:
-                train_batch, labels_batch = train_batch.cuda(async=True), labels_batch.cuda(async=True)
-                original_shapes_batch = original_shapes_batch.cuda(async=True)
+        # move to GPU if available
+        if params.cuda:
+            train_batch, labels_batch = train_batch.cuda(async=True), labels_batch.cuda(async=True)
+            original_shapes_batch = original_shapes_batch.cuda(async=True)
 
-            # convert to torch Variables
-            train_batch, labels_batch = Variable(train_batch), Variable(labels_batch)
-            original_shapes_batch = Variable(original_shapes_batch)
+        # convert to torch Variables
+        train_batch, labels_batch = Variable(train_batch), Variable(labels_batch)
+        original_shapes_batch = Variable(original_shapes_batch)
 
-            # compute model output and loss
-            output_batch = model(train_batch)
+        # compute model output and loss
+        output_batch = model(train_batch)
 
-            loss = loss_fn(output_batch, labels_batch)
+        loss = loss_fn(output_batch, labels_batch)
 
-            # clear previous gradients, compute gradients of all variables wrt loss
-            optimizer.zero_grad()
-            loss.backward()
+        # clear previous gradients, compute gradients of all variables wrt loss
+        optimizer.zero_grad()
+        loss.backward()
 
-            # performs updates using calculated gradients
-            optimizer.step()
+        # performs updates using calculated gradients
+        optimizer.step()
 
-            # Evaluate summaries only once in a while
-            if i % params.save_summary_steps == 0:
-                # extract data from torch Variable, move to cpu, convert to numpy arrays
-                # output_batch = output_batch.data.cpu().numpy()
-                # labels_batch = labels_batch.data.cpu().numpy()
+        # Evaluate summaries only once in a while
+        if i % params.save_summary_steps == 0:
+            # compute all metrics on this batch
+            summary_batch = {metric: metrics[metric](output_batch, labels_batch, original_shapes_batch)
+                             for metric in metrics}
+            summary_batch['loss'] = loss.item()
+            summary.append(summary_batch)
 
-                # compute all metrics on this batch
-                summary_batch = {metric: metrics[metric](output_batch, labels_batch, original_shapes_batch)
-                                 for metric in metrics}
-                summary_batch['loss'] = loss.item()
-                summ.append(summary_batch)
+        # update the average loss
+        loss_avg.update(loss.item())
 
-            # update the average loss
-            loss_avg.update(loss.item())
-
-            t.set_postfix(loss='{:05.3f}'.format(loss_avg()))
-            t.update()
-
-    metrics_mean = {metric: np.mean([x[metric] for x in summ]) for metric in summ[0]}
+    metrics_mean = {metric: np.mean([x[metric] for x in summary]) for metric in summary[0]}
     metrics_string = " ; ".join("{}: {:05.3f}".format(k, v) for k, v in metrics_mean.items())
     logging.info("- Train metrics: " + metrics_string)
 

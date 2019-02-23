@@ -1,26 +1,5 @@
-"""Split the SIGNS dataset into train/val/test and resize images to 64x64.
-The SIGNS dataset comes into the following format:
-    train/
-        0_IMG_5864.jpg
-        ...
-    test/
-        0_IMG_5942.jpg
-        ...
-Original images have size (3024, 3024).
-Resizing to (64, 64) reduces the dataset size from 1.16 GB to 4.7 MB, and loading smaller images
-makes training faster.
-We already have a test set created, so we only need to split "train" into train and val sets.
-Because we don't have a lot of images and we want that the statistics on the val set be as
-representative as possible, we'll take 20% of "train" as val set.
-
-
-
-"""
-
 import argparse
 import os
-from PIL import Image
-from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
@@ -34,14 +13,6 @@ parser.add_argument('--data_dir',
                     default='raw_dataset/Localization dataset',
                     help="Directory with the Images and training and test csvs")
 parser.add_argument('--output_dir', default='data/LocalizationDataset', help="Where to write the new data")
-
-
-def resize_and_save(filename, output_dir, size=SIZE):
-    """Resize the image contained in `filename` and save it to the `output_dir`"""
-    image = Image.open(filename)
-    # Use bilinear interpolation instead of the default "nearest neighbor" method
-    image = image.resize((size, size), Image.BILINEAR)
-    image.save(os.path.join(output_dir, filename.split('/')[-1]))
 
 
 if __name__ == '__main__':
@@ -73,25 +44,14 @@ if __name__ == '__main__':
     train_df = pd.concat([df_names, df_boxes], axis=1, ignore_index=True)
     train_df.columns = ['filename', 'x', 'y', 'w', 'h']
 
-    # store the original size of the image
-    train_df['original_h'] = 0.0
-    train_df['original_w'] = 0.0
-
-    for index, row in train_df.iterrows():
-        image_path = os.path.join(args.data_dir, 'images', row['filename'])
-        image = Image.open(image_path)
-        width, height = image.size
-        train_df.loc[index, 'original_h'] = height
-        train_df.loc[index, 'original_w'] = width
-
     test_df = pd.read_csv(test_images_txt, header=None)
     test_df.columns = ['filename']
 
-    # Split the images in 'train' into 80% train and 20% val
-    # Make sure to always shuffle with a fixed seed so that the split is reproducible
     train_df.sort_values(by=['filename'], inplace=True)
     train_df.reindex(np.random.RandomState(seed=SEED).permutation(train_df.index))
 
+    # Split the images in 'train' into 80% train and 20% val
+    # Make sure to always shuffle with a fixed seed so that the split is reproducible
     split = int(TRAIN_SPLIT * len(train_df))
 
     train_filenames_with_label_df = train_df[:split]
@@ -116,12 +76,7 @@ if __name__ == '__main__':
 
         print("Processing {} data, saving preprocessed csv file to {}".format(split, output_dir_split))
 
-        #
         df = dataset_df[split]
         df.to_csv(path_or_buf=os.path.join(output_dir_split, '{}.csv'.format('dataset')), index=False)
-
-        # Not pre-processing the file re shaping
-        # for filename in tqdm(filenames[split]):
-        #     resize_and_save(filename, output_dir_split, size=SIZE)
 
     print("Done building dataset")

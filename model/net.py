@@ -31,7 +31,7 @@ class ModelWrapper:
         :return:
         """
         self.model_ft = models.resnet18(pretrained=True)
-        self.set_parameter_requires_grad()
+        # self.set_parameter_requires_grad()
         num_features = self.model_ft.fc.in_features
         # Parameters of newly constructed modules have requires_grad=True by default so no need to set auto grad=True
         self.model_ft.fc = nn.Linear(num_features, self.number_output)

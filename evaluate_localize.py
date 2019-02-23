@@ -7,13 +7,13 @@ import os
 import numpy as np
 import torch
 from torch.autograd import Variable
-import utils
+from utils.utils import Params
 import model.net as net
 import model.data_loader as data_loader
 from utils.localization_utils import box_transform
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data_dir', default='data/64x64_SIGNS', help="Directory containing the dataset")
+parser.add_argument('--data_dir', default='data/LocalizationDataset', help="Directory containing the dataset")
 parser.add_argument('--model_dir', default='experiments/base_model', help="Directory containing params.json")
 parser.add_argument('--restore_file', default='best', help="name of the file in --model_dir \
                      containing weights to load")

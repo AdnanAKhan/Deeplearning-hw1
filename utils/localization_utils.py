@@ -10,7 +10,10 @@ def to_2d_tensor(inp):
             o= torch.unsqueeze(x, 0)
             print(o.size()) # torch.Size([1, 6])
     """
-    inp = torch.Tensor(inp.float())
+    if torch.cuda.is_available():
+        inp = torch.Tensor(inp.cpu().float())
+    else:
+        inp = torch.Tensor(inp.float())
     if len(inp.size()) < 2:  # if one D vector
         inp = inp.unsqueeze(0)
     return inp
